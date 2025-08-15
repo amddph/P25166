@@ -1,0 +1,58 @@
+# Install required libraries
+!pip install pandas nltk openpyxl vaderSentiment
+# Import necessary libraries
+import pandas as pd
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+import re
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+# Download NLTK data
+nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('punkt_tab')
+# Mount Google Drive
+from google.colab import drive
+drive.mount('/content/drive')
+# TODO: Replace with your file path
+# Example: '/content/drive/My Drive/Cleaned Data.xlsx' (Google Drive)
+# or '/content/Cleaned Data.xlsx' (uploaded to Colab)
+file_path = "/content/ForGT_SirJeffFile.xlsx"
+# Read the Excel file with openpyxl engine
+df = pd.read_excel(file_path, engine='openpyxl')
+# Print column names to verify
+print("Available columns:", df.columns.tolist())
+# TODO: Replace 'sentiment' with the actual column name from the printed list
+sentiment_column = 'Comment'  # Update this after checking the printed columns
+# Get the list of English stop words
+stop_words = set(stopwords.words('english'))
+# Initialize VADER
+analyzer = SentimentIntensityAnalyzer()
+# Function to clean text and compute VADER sentiment scores
+def process_text(text):
+    if isinstance(text, str):  # Check if the input is a string
+        # Convert to lowercase
+        text = text.lower()
+        # Remove punctuation, special characters, and numbers
+        text = re.sub(r'[^a-z\s]', '', text)
+        # Tokenize the text
+        words = word_tokenize(text)
+        # Remove stop words
+        filtered_words = [word for word in words if word not in stop_words]
+        # Join the words back into a string
+        cleaned_text = ' '.join(filtered_words)
+        # Compute VADER sentiment scores
+        scores = analyzer.polarity_scores(cleaned_text)
+        return pd.Series([cleaned_text, scores['compound'], scores['pos'], scores['neu'], scores['neg']],
+                         index=['cleaned_sentiment', 'vader_compound', 'vader_positive', 'vader_neutral', 'vader_negative'])
+    return pd.Series([text, 0, 0, 0, 0],
+                    index=['cleaned_sentiment', 'vader_compound', 'vader_positive', 'vader_neutral', 'vader_negative'])
+# Apply the function to the sentiment column
+df[['cleaned_sentiment', 'vader_compound', 'vader_positive', 'vader_neutral', 'vader_negative']] = df[sentiment_column].apply(process_text)
+# Save the processed data to a new Excel file
+# TODO: Adjust the output path if needed
+output_path = '/content/cleaned_sentiments_with_vader.xlsx'  # Google Drive
+# or '/content/cleaned_sentiments_with_vader.xlsx' (Colab)
+df.to_excel(output_path, index=False, engine='openpyxl')
+# Display the first few rows
+print(df[[sentiment_column, 'cleaned_sentiment', 'vader_compound', 'vader_positive', 'vader_neutral', 'vader_negative']].head())

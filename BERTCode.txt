@@ -1,0 +1,105 @@
+# Install required libraries
+!pip install pandas nltk openpyxl transformers torch
+
+# Import necessary libraries
+import pandas as pd
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+import re
+from google.colab import drive
+from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+
+# Download NLTK data
+nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('punkt_tab')
+
+# Mount Google Drive
+drive.mount('/content/drive')
+
+# Specify the file path
+file_path = '/content/ForGT_SirJeffFile.xlsx'  # Update if needed
+
+# Read the Excel file with openpyxl engine
+df = pd.read_excel(file_path, engine='openpyxl')
+
+# Print column names to verify
+print("Available columns:", df.columns.tolist())
+
+# Specify the column containing text data
+sentiment_column = 'Comment'  # Update after checking printed columns if needed
+
+# Get the list of English stop words
+stop_words = set(stopwords.words('english'))
+
+# Function to remove stop words and noisy data
+def clean_text(text):
+    if isinstance(text, str):  # Check if the input is a string
+        # Convert to lowercase
+        text = text.lower()
+        # Remove punctuation, special characters, and numbers
+        text = re.sub(r'[^a-z\s]', '', text)
+        # Tokenize the text
+        words = word_tokenize(text)
+        # Remove stop words
+        filtered_words = [word for word in words if word not in stop_words]
+        # Join the words back into a string
+        return ' '.join(filtered_words)
+    return text  # Return unchanged if not a string (e.g., NaN)
+
+# Apply text cleaning to the sentiment column
+df['cleaned_text'] = df[sentiment_column].apply(clean_text)
+
+# Load a pre-trained BERT-based sentiment analysis model
+model_name = "distilbert-base-uncased-finetuned-sst-2-english"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSequenceClassification.from_pretrained(model_name)
+sentiment_analyzer = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+
+# Function to perform sentiment analysis in batches
+def batch_sentiment_analysis(texts, batch_size=16):
+    predictions = []
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i:i + batch_size]
+        # Ensure all inputs are strings; replace non-strings with empty string
+        batch_texts = [str(text) if isinstance(text, str) else "" for text in batch_texts]
+        batch_results = sentiment_analyzer(batch_texts, truncation=True, max_length=512)
+        predictions.extend([result['label'].lower() for result in batch_results])
+    return predictions
+
+# Perform sentiment analysis on the cleaned text
+texts = df['cleaned_text'].tolist()
+predicted_sentiments = batch_sentiment_analysis(texts)
+
+# Add predictions to the DataFrame
+df['predicted_sentiment'] = predicted_sentiments
+
+# If ground truth sentiment labels exist, evaluate the model
+if 'sentiment' in df.columns:
+    true_labels = df['sentiment'].str.lower().tolist()
+    predicted_labels = df['predicted_sentiment'].tolist()
+    from sklearn.metrics import accuracy_score, confusion_matrix
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    # Calculate accuracy
+    accuracy = accuracy_score(true_labels, predicted_labels)
+    print(f"Accuracy: {accuracy:.4f}")
+
+    # Generate confusion matrix
+    labels = ['positive', 'negative']  # Adjust if your data includes 'neutral'
+    cm = confusion_matrix(true_labels, predicted_labels, labels=labels)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title('Confusion Matrix')
+    plt.show()
+
+# Save the processed data to a new Excel file
+output_path = '/content/BERTsentiment_analysis_results1.xlsx'
+df.to_excel(output_path, index=False)  # Use to_excel, no encoding needed
+
+# Display the first few rows
+print(df[[sentiment_column, 'cleaned_text', 'predicted_sentiment']].head())
